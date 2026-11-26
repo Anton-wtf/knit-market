@@ -78,6 +78,10 @@ function App() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [selectedSize, setSelectedSize] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [orderComment, setOrderComment] = useState('')
+  const [orderStatus, setOrderStatus] = useState('')
+  const [isSendingOrder, setIsSendingOrder] = useState(false)
 
   // Загружаем корзину из памяти браузера
   const [cart, setCart] = useState(() => {
@@ -185,6 +189,58 @@ function App() {
     setCart((currentCart) =>
       currentCart.filter((item) => item.id !== itemId)
     )
+  }
+
+  // Отправка заказа
+  const submitOrder = async (event) => {
+    event.preventDefault()
+
+    if (!customerName.trim() || cart.length === 0) return
+
+    const telegram = window.Telegram?.WebApp
+    const initData = telegram?.initData
+
+    if (!initData) {
+      setOrderStatus('Открой магазин через Telegram, чтобы оформить заказ.')
+      return
+    }
+
+    setIsSendingOrder(true)
+    setOrderStatus('')
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+      const response = await fetch(`${apiUrl}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData,
+          name: customerName.trim(),
+          comment: orderComment.trim(),
+          items: cart.map((item) => ({
+            productId: item.productId,
+            size: item.size,
+            model: item.model,
+            quantity: item.quantity,
+          })),
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Не удалось отправить заказ')
+      }
+
+      setOrderStatus('Заказ успешно отправлен! Спасибо 💗')
+      setCart([])
+      setCustomerName('')
+      setOrderComment('')
+    } catch (error) {
+      setOrderStatus(error.message || 'Ошибка отправки заказа')
+    } finally {
+      setIsSendingOrder(false)
+    }
   }
 
   // Общее количество изделий
@@ -522,9 +578,44 @@ function App() {
               <strong>
                 Итого: {total.toLocaleString('ru-RU')} ₽
               </strong>
-
-              <span>Пока это демонстрационная корзина</span>
             </div>
+
+            <form className="checkout-form" onSubmit={submitOrder}>
+              <h3>ОФОРМЛЕНИЕ ЗАКАЗА ♡</h3>
+
+              <label htmlFor="customer-name">Как тебя зовут?</label>
+              <input
+                id="customer-name"
+                type="text"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                placeholder="Твоё имя"
+                maxLength={80}
+                required
+              />
+
+              <label htmlFor="order-comment">Комментарий к заказу</label>
+              <textarea
+                id="order-comment"
+                value={orderComment}
+                onChange={(event) => setOrderComment(event.target.value)}
+                placeholder="Пожелания или дополнительные детали..."
+                maxLength={500}
+                rows={3}
+              />
+
+              <p>Твой Telegram-аккаунт будет определён автоматически.</p>
+
+              <button
+                className="main-button"
+                type="submit"
+                disabled={isSendingOrder}
+              >
+                {isSendingOrder ? 'ОТПРАВЛЯЕМ...' : 'ОФОРМИТЬ ЗАКАЗ ♡'}
+              </button>
+
+              {orderStatus && <p role="status">{orderStatus}</p>}
+            </form>
           </>
         )}
 
