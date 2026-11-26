@@ -82,6 +82,8 @@ function App() {
   const [orderComment, setOrderComment] = useState('')
   const [orderStatus, setOrderStatus] = useState('')
   const [isSendingOrder, setIsSendingOrder] = useState(false)
+  const [isOrderComplete, setIsOrderComplete] = useState(false)
+  const [orderRequestId, setOrderRequestId] = useState(() => crypto.randomUUID())
 
   // Загружаем корзину из памяти браузера
   const [cart, setCart] = useState(() => {
@@ -195,7 +197,7 @@ function App() {
   const submitOrder = async (event) => {
     event.preventDefault()
 
-    if (!customerName.trim() || cart.length === 0) return
+    if (isSendingOrder || !customerName.trim() || cart.length === 0) return
 
     const telegram = window.Telegram?.WebApp
     const initData = telegram?.initData
@@ -215,6 +217,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initData,
+          orderRequestId,
           name: customerName.trim(),
           comment: orderComment.trim(),
           items: cart.map((item) => ({
@@ -232,7 +235,9 @@ function App() {
         throw new Error(result.error || 'Не удалось отправить заказ')
       }
 
-      setOrderStatus('Заказ успешно отправлен! Спасибо 💗')
+      setOrderStatus('')
+      setIsOrderComplete(true)
+      setOrderRequestId(crypto.randomUUID())
       setCart([])
       setCustomerName('')
       setOrderComment('')
@@ -511,9 +516,29 @@ function App() {
         </div>
 
         {cart.length === 0 ? (
-          <p className="empty-cart">
-            Здесь пока пусто. Самое время выбрать что-нибудь уютное ♡
-          </p>
+          isOrderComplete ? (
+            <div className="order-success" role="status" aria-live="polite">
+              <span className="order-success-icon">✓</span>
+              <span className="eyebrow">KNIT MARKET · ЗАКАЗ ПРИНЯТ</span>
+              <h3>УРА! ТВОЙ ЗАКАЗ УЖЕ У НАС ♡</h3>
+              <p>Спасибо за доверие! Мы получили твой заказ и скоро свяжемся с тобой в Telegram, чтобы обсудить детали.</p>
+              <button
+                className="main-button"
+                type="button"
+                onClick={() => {
+                  setIsOrderComplete(false)
+                  setOrderStatus('')
+                  document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' })
+                }}
+              >
+                ВЕРНУТЬСЯ В КАТАЛОГ ↗
+              </button>
+            </div>
+          ) : (
+            <p className="empty-cart">
+              Здесь пока пусто. Самое время выбрать что-нибудь уютное ♡
+            </p>
+          )
         ) : (
           <>
             <div className="cart-items">
