@@ -96,6 +96,10 @@ function verifyTelegramData(initData) {
   }
 }
 
+// Защита от повторной отправки одного и того же заказа.
+// Ключ хранится в памяти сервера 24 часа.
+const processedOrders = new Map()
+
 const allowedOrigins = new Set([
   'https://knit-market.vercel.app',
   'http://127.0.0.1:5173',
@@ -144,6 +148,21 @@ const server = createServer(async (req, res) => {
     if (!user || !user.id) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ error: 'Не удалось проверить Telegram-пользователя' }))
+    }
+
+    const orderRequestId = String(data.orderRequestId || '')
+
+    if (!/^[0-9a-f-]{36}$/i.test(orderRequestId)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ error: 'Не удалось определить номер заказа. Обнови страницу и попробуй ещё раз.' }))
+    }
+
+    const requestKey = `${user.id}:${orderRequestId}`
+    const previousOrder = processedOrders.get(requestKey)
+
+    if (previousOrder && previousOrder > Date.now()) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ success: true, duplicate: true }))
     }
 
     const customerName = String(data.name || '').trim()
@@ -202,7 +221,21 @@ const server = createServer(async (req, res) => {
       `💰 ИТОГО: ${total.toLocaleString('ru-RU')} ₽\n\n` +
       `📝 Комментарий: ${comment || 'Нет'}`
 
-    await bot.api.sendMessage(ownerId, message)
+    // Запоминаем ключ до отправки сообщения, чтобы параллельные запросы
+    // с тем же ключом не создали два уведомления.
+    processedOrders.set(requestKey, Date.now() + 24 * 60 * 60 * 1000)
+
+    try {
+      await bot.api.sendMessage(ownerId, message)
+    } catch (error) {
+      processedOrders.delete(requestKey)
+      throw error
+    }
+
+    // Периодически удаляем устаревшие ключи.
+    for (const [key, expiresAt] of processedOrders) {
+      if (expiresAt <= Date.now()) processedOrders.delete(key)
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ success: true }))
